@@ -53,6 +53,7 @@ RCT_EXPORT_METHOD(init:(NSDictionary *)options)
 RCT_EXPORT_METHOD(setOptions:(NSDictionary *)options)
 {
     CLLocationAccuracy locationMode = kCLLocationAccuracyHundredMeters;
+    CLLocationDistance distanceFilter = 100;
     BOOL pausesLocationUpdatesAutomatically = YES;
     BOOL allowsBackgroundLocationUpdates = NO;
     int locationTimeout = DefaultLocationTimeout;
@@ -61,6 +62,10 @@ RCT_EXPORT_METHOD(setOptions:(NSDictionary *)options)
     if(options != nil) {
         
         NSArray *keys = [options allKeys];
+        
+        if ([keys containsObject:@"distanceFilter"]) {
+            distanceFilter = [[options objectForKey:@"distanceFilter"] doubleValue];
+        }
         
         if([keys containsObject:@"locationMode"]) {
             locationMode = [[options objectForKey:@"locationMode"] doubleValue];
@@ -74,7 +79,6 @@ RCT_EXPORT_METHOD(setOptions:(NSDictionary *)options)
             allowsBackgroundLocationUpdates = [[options objectForKey:@"allowsBackgroundLocationUpdates"] boolValue];
         }
         
-        
         if([keys containsObject:@"locationTimeout"]) {
             locationTimeout = [[options objectForKey:@"locationTimeout"] intValue];
         }
@@ -83,6 +87,9 @@ RCT_EXPORT_METHOD(setOptions:(NSDictionary *)options)
             reGeocodeTimeout = [[options objectForKey:@"reGeocodeTimeout"] intValue];
         }
     }
+    
+    //设定定位的最小距离
+    [self.locationManager setDistanceFilter:distanceFilter];
     
     //设置期望定位精度
     [self.locationManager setDesiredAccuracy:locationMode];
