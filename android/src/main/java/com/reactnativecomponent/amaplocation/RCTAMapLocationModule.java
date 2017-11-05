@@ -38,7 +38,9 @@ public class RCTAMapLocationModule extends ReactContextBaseJavaModule {
     private ReactApplicationContext reactContext;
 
     private AMapLocationClient locationClient = null;
+    private AMapLocationClient locationClientOnce = null;
     private AMapLocationClientOption locationOption = null;
+    private AMapLocationClientOption locationOptionOnce = null;
 
     private Intent alarmIntent = null;
     private PendingIntent alarmPi = null;
@@ -65,22 +67,6 @@ public class RCTAMapLocationModule extends ReactContextBaseJavaModule {
         return "AMapLocation";
     }
 
-    @ReactMethod
-    public void init(final ReadableMap options) {
-        if(locationClient != null) {
-            return;
-        }
-        currentActivity = reactContext.getCurrentActivity();
-        locationOption = new AMapLocationClientOption();
-        locationOption.setOnceLocation(true);   //调整为单次定位, 默认是多次
-        //初始化client
-        locationClient = new AMapLocationClient(getCurrentActivity());
-        if(options != null) {
-            setOptions(options);
-        }
-        // 设置定位监听
-        locationClient.setLocationListener(locationListener);
-    }
 
     @ReactMethod
     public void setOptions(final ReadableMap options){
@@ -161,15 +147,58 @@ public class RCTAMapLocationModule extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void getReGeocode() {
-        locationOption.setNeedAddress(true);    //可选，设置是否返回逆地理地址信息。默认是true
+    public void getReGeocode(ReadableMap options) {
+        locationOptionOnce = new AMapLocationClientOption();
+        locationOptionOnce.setOnceLocation(true);   //调整为单次定位, 默认是多次
+        //初始化client
+        locationClientOnce = new AMapLocationClient(getCurrentActivity());
+        // 设置定位监听
+        locationClientOnce.setLocationListener(new AMapLocationListener() {
+            @Override
+            public void onLocationChanged(AMapLocation aMapLocation) {
+                WritableMap resultMap = setResultMap(aMapLocation);
+                reactContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                        .emit("amap.location.onLocationResult.once", resultMap);
+            }
+        });
+        if(options.hasKey("locationMode")) {
+            locationOptionOnce.setLocationMode(AMapLocationMode.valueOf(options.getString("locationMode")));//可选，设置定位模式，可选的模式有高精度、仅设备、仅网络。默认为高精度模式
+        }
+        if(options.hasKey("gpsFirst")) {
+            locationOptionOnce.setGpsFirst(options.getBoolean("gpsFirst"));//可选，设置是否gps优先，只在高精度模式下有效。默认关闭
+        }
+        if(options.hasKey("httpTimeout")) {
+            locationOptionOnce.setHttpTimeOut(options.getInt("httpTimeout"));//可选，设置网络请求超时时间。默认为30秒。在仅设备模式下无效
+        }
+        if(options.hasKey("interval")) {
+            locationOptionOnce.setInterval(options.getInt("interval"));//可选，设置连续定位间隔。
+        }
+        if(options.hasKey("needAddress")) {
+            locationOptionOnce.setNeedAddress(options.getBoolean("needAddress"));//可选，设置是否返回逆地理地址信息。默认是true
+        }
+        if(options.hasKey("onceLocation")) {
+            locationOptionOnce.setOnceLocation(options.getBoolean("onceLocation"));//可选，设置是否单次定位。默认是false
+        }
+        if(options.hasKey("locationCacheEnable")) {
+            locationOptionOnce.setLocationCacheEnable(options.getBoolean("locationCacheEnable"));//可选，设置是否开启缓存，默认为true.
+        }
+        if(options.hasKey("onceLocationLatest")) {
+            locationOptionOnce.setOnceLocationLatest(options.getBoolean("onceLocationLatest"));//可选，设置是否等待wifi刷新，默认为false.如果设置为true,会自动变为单次定位，持续定位时不要使用
+        }
+//        if(options.hasKey("locationProtocol")) {
+//            AMapLocationClientOption.setLocationProtocol(AMapLocationProtocol.valueOf(options.getString("locationProtocol")));//可选， 设置网络请求的协议。可选HTTP或者HTTPS。默认为HTTP
+//        }
+        if(options.hasKey("sensorEnable")) {
+            locationOptionOnce.setSensorEnable(options.getBoolean("sensorEnable"));//可选，设置是否使用传感器。默认是false
+        }
+        locationOptionOnce.setNeedAddress(true);    //可选，设置是否返回逆地理地址信息。默认是true
         // 设置定位参数
-        locationClient.setLocationOption(locationOption);
+        locationClientOnce.setLocationOption(locationOptionOnce);
         // 启动定位
-        locationClient.startLocation();
+        locationClientOnce.startLocation();
     }
 
-    @ReactMethod
+//    @ReactMethod
     public void getLocation() {
         locationOption.setNeedAddress(false);    //可选，设置是否返回逆地理地址信息。默认是true
         // 设置定位参数
@@ -179,7 +208,17 @@ public class RCTAMapLocationModule extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void startUpdatingLocation() {
+    public void startUpdatingLocation(ReadableMap options) {
+        currentActivity = reactContext.getCurrentActivity();
+        locationOption = new AMapLocationClientOption();
+        //locationOption.setOnceLocation(true);   //调整为单次定位, 默认是多次
+        //初始化client
+        locationClient = new AMapLocationClient(getCurrentActivity());
+        if(options != null) {
+            setOptions(options);
+        }
+        // 设置定位监听
+        locationClient.setLocationListener(locationListener);
         locationClient.startLocation();
 
         if(null != alarm){
@@ -191,16 +230,12 @@ public class RCTAMapLocationModule extends ReactContextBaseJavaModule {
 
     @ReactMethod
     public void stopUpdatingLocation() {
-        locationClient.stopLocation();
+//        locationClient.stopLocation();
 
         //停止定位的时候取消闹钟
         if(null != alarm){
             alarm.cancel(alarmPi);
         }
-    }
-
-    @ReactMethod
-    public void cleanUp() {
         if (null != locationClient) {
             locationClient.stopLocation();
             locationClient.onDestroy();
@@ -215,6 +250,7 @@ public class RCTAMapLocationModule extends ReactContextBaseJavaModule {
             mHandler = null;
         }
     }
+
 
     private WritableMap setResultMap(AMapLocation location) {
         WritableMap resultMap = Arguments.createMap();

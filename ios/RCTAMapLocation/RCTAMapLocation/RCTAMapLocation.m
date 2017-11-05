@@ -13,6 +13,8 @@
 
 @property (nonatomic, strong) AMapLocationManager *locationManager;
 
+@property (nonatomic, strong) AMapLocationManager *locationManagerOnce;
+
 @property (nonatomic, copy) AMapLocatingCompletionBlock completionBlock;
 
 @end
@@ -23,37 +25,36 @@
 
 RCT_EXPORT_MODULE(AMapLocation);
 
-RCT_EXPORT_METHOD(init:(NSDictionary *)options)
-{
-    if(self.locationManager != nil) {
-        return;
-    }
-    
-    self.locationManager = [[AMapLocationManager alloc] init];
-    
-    [self.locationManager setDelegate:self];
-    
-    [self setOptions:options];
-    
-    self.completionBlock = ^(CLLocation *location, AMapLocationReGeocode *regeocode, NSError *error)
-    {
-        NSDictionary *resultDic;
-        if (error)
-        {
-            resultDic = [self setErrorResult:error];
-        }
-        else {
-            resultDic = [self setSuccessResult:location regeocode:regeocode];
-        }
-        [self.bridge.eventDispatcher sendAppEventWithName:@"amap.location.onLocationResult"
-                                                     body:resultDic];
-    };
+
+#pragma mark - Lifecycle
+- (void)dealloc {
+    self.locationManager = nil;
+    self.locationManagerOnce = nil;
 }
 
-RCT_EXPORT_METHOD(setOptions:(NSDictionary *)options)
+#pragma mark - Setter & Getter
+- (AMapLocationManager *)locationManager {
+    __weak __typeof__(self) weakSelf = self;
+    if (!_locationManager) {
+        _locationManager = [[AMapLocationManager alloc] init];
+        _locationManager.delegate = weakSelf;
+    }
+    return _locationManager;
+}
+
+- (AMapLocationManager *)locationManagerOnce {
+    if (!_locationManagerOnce) {
+        _locationManagerOnce = [[AMapLocationManager alloc] init];
+//        _locationManagerOnce.delegate = self;
+    }
+    return _locationManagerOnce;
+}
+
+- (void)setOptions:(NSDictionary *)options locationManager:(AMapLocationManager *)locationManager
 {
     CLLocationAccuracy locationMode = kCLLocationAccuracyHundredMeters;
     CLLocationDistance distanceFilter = 100;
+    BOOL locatingWithReGeocode = NO;
     BOOL pausesLocationUpdatesAutomatically = YES;
     BOOL allowsBackgroundLocationUpdates = NO;
     int locationTimeout = DefaultLocationTimeout;
@@ -62,6 +63,10 @@ RCT_EXPORT_METHOD(setOptions:(NSDictionary *)options)
     if(options != nil) {
         
         NSArray *keys = [options allKeys];
+        
+        if ([keys containsObject:@"locatingWithReGeocode"]) {
+            locatingWithReGeocode = [[options objectForKey:@"locatingWithReGeocode"] boolValue];
+        }
         
         if ([keys containsObject:@"distanceFilter"]) {
             distanceFilter = [[options objectForKey:@"distanceFilter"] doubleValue];
@@ -88,52 +93,66 @@ RCT_EXPORT_METHOD(setOptions:(NSDictionary *)options)
         }
     }
     
+    [locationManager setLocatingWithReGeocode:locatingWithReGeocode];
+    
     //设定定位的最小距离
-    [self.locationManager setDistanceFilter:distanceFilter];
+    [locationManager setDistanceFilter:distanceFilter];
     
     //设置期望定位精度
-    [self.locationManager setDesiredAccuracy:locationMode];
+    [locationManager setDesiredAccuracy:locationMode];
     
     //设置是否允许系统暂停定位
-    [self.locationManager setPausesLocationUpdatesAutomatically:pausesLocationUpdatesAutomatically];
+    [locationManager setPausesLocationUpdatesAutomatically:pausesLocationUpdatesAutomatically];
     
     //设置是否允许在后台定位
-    [self.locationManager setAllowsBackgroundLocationUpdates:allowsBackgroundLocationUpdates];
+    [locationManager setAllowsBackgroundLocationUpdates:allowsBackgroundLocationUpdates];
     
     //设置定位超时时间
-    [self.locationManager setLocationTimeout:locationTimeout];
+    [locationManager setLocationTimeout:locationTimeout];
     
     //设置逆地理超时时间
-    [self.locationManager setReGeocodeTimeout:reGeocodeTimeout];
+    [locationManager setReGeocodeTimeout:reGeocodeTimeout];
 
 }
 
-RCT_EXPORT_METHOD(cleanUp)
+RCT_EXPORT_METHOD(getReGeocode:(NSDictionary *)option)
 {
-    //停止定位
-    [self.locationManager stopUpdatingLocation];
-    
-    [self.locationManager setDelegate:nil];
-    
-    self.locationManager = nil;
-}
-
-
-
-RCT_EXPORT_METHOD(getReGeocode)
-{
+    [self setOptions:option locationManager:self.locationManagerOnce];
     //进行单次带逆地理定位请求
-    [self.locationManager requestLocationWithReGeocode:YES completionBlock:self.completionBlock];
+    [self.locationManagerOnce requestLocationWithReGeocode:YES completionBlock:^(CLLocation *location, AMapLocationReGeocode *regeocode, NSError *error) {
+        NSDictionary *resultDic;
+        if (error)
+        {
+            resultDic = [self setErrorResult:error];
+        }
+        else {
+            resultDic = [self setSuccessResult:location regeocode:regeocode];
+        }
+        [self.bridge.eventDispatcher sendAppEventWithName:@"amap.location.onLocationResult.once"
+                                                     body:resultDic];
+    }];
 }
 
 RCT_EXPORT_METHOD(getLocation)
 {
     //进行单次定位请求
-    [self.locationManager requestLocationWithReGeocode:NO completionBlock:self.completionBlock];
+    [self.locationManagerOnce requestLocationWithReGeocode:NO completionBlock:^(CLLocation *location, AMapLocationReGeocode *regeocode, NSError *error) {
+        NSDictionary *resultDic;
+        if (error)
+        {
+            resultDic = [self setErrorResult:error];
+        }
+        else {
+            resultDic = [self setSuccessResult:location regeocode:regeocode];
+        }
+        [self.bridge.eventDispatcher sendAppEventWithName:@"amap.location.onLocationResult.once"
+                                                     body:resultDic];
+    }];
 }
 
-RCT_EXPORT_METHOD(startUpdatingLocation)
+RCT_EXPORT_METHOD(startUpdatingLocation:(NSDictionary *)option)
 {
+    [self setOptions:option locationManager:self.locationManager];
     //开始进行连续定位
     [self.locationManager startUpdatingLocation];
 }
@@ -142,12 +161,6 @@ RCT_EXPORT_METHOD(stopUpdatingLocation)
 {
     //停止连续定位
     [self.locationManager stopUpdatingLocation];
-
-}
-
-- (void)dealloc
-{
-    [self cleanUp];
 }
 
 - (NSDictionary*)setErrorResult:(NSError *)error
